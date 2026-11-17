@@ -328,6 +328,20 @@ function resolveAssetTarget(targetRaw: string, catalog: VaultCatalog): string | 
   return match ? match.rawUrl : null
 }
 
+const CALLOUT_DEFAULT_TITLES: Record<string, string> = {
+  info: 'Informació',
+  note: 'Nota',
+  quote: 'Cita',
+  cite: 'Cita',
+  tip: 'Consell',
+  hint: 'Pista',
+  warning: 'Atenció',
+  caution: 'Precaució',
+  danger: 'Important',
+  example: 'Exemple',
+  abstract: 'Resum',
+}
+
 function preprocessObsidianCallouts(markdown: string): string {
   const lines = markdown.split(/\r?\n/)
   const out: string[] = []
@@ -342,12 +356,14 @@ function preprocessObsidianCallouts(markdown: string): string {
     }
 
     if (!inCodeFence) {
-      const calloutMatch = line.match(/^>\s*\[!([a-zA-Z0-9_-]+)\]\s*(.*)$/)
+      const calloutMatch = line.match(/^(\s*)>\s*\[!([a-zA-Z0-9_-]+)\][+-]?\s*(.*)$/)
       if (calloutMatch) {
-        const type = calloutMatch[1].toLowerCase()
-        const title = (calloutMatch[2] || type).trim()
-        out.push(`> __OBS_CALLOUT__${type}::${title}__`)
-        out.push('>')
+        const indent = calloutMatch[1] ?? ''
+        const type = calloutMatch[2].toLowerCase()
+        const rawTitle = calloutMatch[3].trim()
+        const title = rawTitle || CALLOUT_DEFAULT_TITLES[type] || type
+        out.push(`${indent}> OBSCALLOUT::${type}::${title}`)
+        out.push(`${indent}>`)
         continue
       }
     }

@@ -81,11 +81,11 @@ export function MarkdownRenderer({ markdown, headings }: MarkdownRendererProps) 
               (c) => !(typeof c === 'string' && c.trim() === ''),
             )
             const firstText = childArray[0] ? getTextContent(childArray[0]).trim() : ''
-            const markerMatch = firstText.match(/^__OBS_CALLOUT__([^:]+)::(.+?)__$/)
+            const markerMatch = firstText.match(/^OBSCALLOUT::([^:]+)::(.*)$/)
 
             if (markerMatch) {
               const type = markerMatch[1].toLowerCase()
-              const title = markerMatch[2]
+              const title = markerMatch[2].trim()
               const restChildren = childArray.slice(1)
 
               return (
@@ -94,7 +94,9 @@ export function MarkdownRenderer({ markdown, headings }: MarkdownRendererProps) 
                     {getCalloutIcon(type)}
                     <span>{title}</span>
                   </div>
-                  <div className="obsidian-callout-body">{restChildren}</div>
+                  {restChildren.length > 0 && (
+                    <div className="obsidian-callout-body">{restChildren}</div>
+                  )}
                 </aside>
               )
             }

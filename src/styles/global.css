@@ -923,37 +923,47 @@ button {
 /* Obsidian Callout Card */
 .obsidian-callout {
   margin: 1.5rem 0;
-  padding: 1.05rem 1.3rem;
+  padding: 1.05rem 1.35rem;
   border: 1px solid var(--border-hairline);
-  border-left: 3px solid var(--accent-brass);
+  border-left: 3px solid var(--accent-primary);
   background-color: var(--bg-callout);
   border-radius: var(--radius-sm);
 }
 
-.obsidian-callout.callout-quote {
-  border-left-color: var(--accent-primary);
+.obsidian-callout.callout-warning,
+.obsidian-callout.callout-caution,
+.obsidian-callout.callout-note {
+  border-left-color: var(--accent-brass);
 }
 
 .obsidian-callout-header {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
-  font-family: var(--font-mono);
-  font-size: 0.76rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-weight: 600;
-  color: var(--accent-brass);
+  gap: 0.48rem;
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--accent-primary);
   margin-bottom: 0.45rem;
 }
 
-.obsidian-callout.callout-quote .obsidian-callout-header {
-  color: var(--accent-primary);
+.obsidian-callout.callout-warning .obsidian-callout-header,
+.obsidian-callout.callout-caution .obsidian-callout-header,
+.obsidian-callout.callout-note .obsidian-callout-header {
+  color: var(--accent-brass);
 }
 
 .obsidian-callout-body {
-  font-size: 0.96rem;
-  line-height: 1.65;
+  font-family: var(--font-sans);
+  font-style: normal;
+  font-size: 0.97rem;
+  line-height: 1.68;
+  color: var(--text-body);
+}
+
+.obsidian-callout-body p {
+  margin: 0 0 0.65rem;
 }
 
 .obsidian-callout-body p:last-child {
