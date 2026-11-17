@@ -1,23 +1,115 @@
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowRight, ChevronRight, FilePlus2, FolderOpen } from 'lucide-react'
+import {
+  ArrowRight,
+  ChevronDown,
+  ChevronRight,
+  FilePlus2,
+  Folder,
+  FolderOpen,
+} from 'lucide-react'
 import { useVault } from '../context/vaultStore'
+import type { VaultFolderNode, VaultNoteItem } from '../types/vault'
+
+type StatusFilter = 'tots' | 'publicats' | 'esborranys'
+
+function matchesFilter(note: VaultNoteItem, filter: StatusFilter): boolean {
+  if (filter === 'publicats') return !note.isDraft
+  if (filter === 'esborranys') return note.isDraft
+  return true
+}
+
+function filterFolderNode(folder: VaultFolderNode, filter: StatusFilter): VaultFolderNode {
+  const notes = folder.notes.filter((n) => matchesFilter(n, filter))
+  const subfolders = folder.subfolders
+    .map((sub) => filterFolderNode(sub, filter))
+    .filter((sub) => sub.totalNotes > 0)
+
+  const totalNotes =
+    notes.length + subfolders.reduce((acc, sub) => acc + sub.totalNotes, 0)
+
+  return {
+    ...folder,
+    notes,
+    subfolders,
+    totalNotes,
+  }
+}
+
+function NoteRow({ note }: { note: VaultNoteItem }) {
+  return (
+    <Link to={`/apunt/${note.slug}`} className="note-row">
+      <div>
+        <div className="note-row-title">{note.title}</div>
+        <div className="note-row-path">
+          Fitxer font: <code>{note.name}</code>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+        {note.isDraft && <span className="badge badge-draft">En preparació</span>}
+        {note.extension === 'pdf' && <span className="badge badge-pdf">PDF</span>}
+        <ArrowRight size={16} color="var(--text-muted)" />
+      </div>
+    </Link>
+  )
+}
+
+function FolderAccordion({ folder }: { folder: VaultFolderNode }) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div className="folder-accordion">
+      <button
+        type="button"
+        className="folder-accordion-btn"
+        aria-expanded={open}
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        <span className="folder-accordion-left">
+          {open ? (
+            <FolderOpen size={18} color="var(--accent-primary)" style={{ flexShrink: 0 }} />
+          ) : (
+            <Folder size={18} color="var(--accent-brass)" style={{ flexShrink: 0 }} />
+          )}
+          <span className="folder-accordion-title">{folder.name}</span>
+        </span>
+
+        <span className="folder-accordion-right">
+          <span>
+            {folder.totalNotes} {folder.totalNotes === 1 ? 'document' : 'documents'}
+          </span>
+          {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        </span>
+      </button>
+
+      {open && (
+        <div className="folder-accordion-body">
+          {folder.subfolders.map((sub) => (
+            <FolderAccordion key={sub.path} folder={sub} />
+          ))}
+          {folder.notes.map((note) => (
+            <NoteRow key={note.path} note={note} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export function SubjectDetailPage() {
   const { subjectSlug } = useParams<{ subjectSlug: string }>()
   const { catalog, loading } = useVault()
-  const [statusFilter, setStatusFilter] = useState<'tots' | 'publicats' | 'esborranys'>('tots')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('tots')
 
   const subject = useMemo(() => {
     if (!catalog || !subjectSlug) return null
     return catalog.subjects.find((s) => s.slug === subjectSlug) ?? null
   }, [catalog, subjectSlug])
 
-  const filteredNotes = useMemo(() => {
-    if (!subject) return []
-    if (statusFilter === 'publicats') return subject.allNotes.filter((n) => !n.isDraft)
-    if (statusFilter === 'esborranys') return subject.allNotes.filter((n) => n.isDraft)
-    return subject.allNotes
+  const filteredTree = useMemo(() => {
+    if (!subject) return null
+    return filterFolderNode(subject.rootFolder, statusFilter)
   }, [subject, statusFilter])
 
   if (loading && !catalog) {
@@ -29,7 +121,7 @@ export function SubjectDetailPage() {
     )
   }
 
-  if (!subject) {
+  if (!subject || !filteredTree) {
     return (
       <div className="container section-block">
         <div className="editorial-card" style={{ textAlign: 'center', padding: '3.5rem 1.5rem' }}>
@@ -124,7 +216,7 @@ export function SubjectDetailPage() {
         </div>
       </div>
 
-      {filteredNotes.length === 0 ? (
+      {filteredTree.totalNotes === 0 ? (
         <div className="editorial-card" style={{ textAlign: 'center', padding: '2.5rem 1.5rem' }}>
           <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
             No hi ha documents en aquesta categoria.
@@ -132,30 +224,11 @@ export function SubjectDetailPage() {
         </div>
       ) : (
         <div className="notes-index-list">
-          {filteredNotes.map((note) => (
-            <Link key={note.path} to={`/apunt/${note.slug}`} className="note-row">
-              <div>
-                {note.folderSegments.length > 0 && (
-                  <div
-                    className="note-row-subject"
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
-                  >
-                    <FolderOpen size={12} />
-                    {note.folderSegments.join(' / ')}
-                  </div>
-                )}
-                <div className="note-row-title">{note.title}</div>
-                <div className="note-row-path">
-                  Fitxer font: <code>{note.name}</code>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                {note.isDraft && <span className="badge badge-draft">En preparació</span>}
-                {note.extension === 'pdf' && <span className="badge badge-pdf">PDF</span>}
-                <ArrowRight size={16} color="var(--text-muted)" />
-              </div>
-            </Link>
+          {filteredTree.subfolders.map((sub) => (
+            <FolderAccordion key={sub.path} folder={sub} />
+          ))}
+          {filteredTree.notes.map((note) => (
+            <NoteRow key={note.path} note={note} />
           ))}
         </div>
       )}

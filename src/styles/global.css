@@ -568,6 +568,88 @@ button {
   margin-top: 0.15rem;
 }
 
+/* Subject Collapsible Folders */
+.folder-accordion {
+  border-bottom: 1px solid var(--border-hairline);
+  background-color: var(--bg-surface);
+}
+
+.folder-accordion-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 0.75rem;
+  border: none;
+  background: transparent;
+  text-align: left;
+  transition: background-color 0.2s ease;
+}
+
+.folder-accordion-btn:hover {
+  background-color: var(--bg-elevated);
+}
+
+.folder-accordion-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.folder-accordion-title {
+  font-family: var(--font-display);
+  font-size: 1.32rem;
+  font-weight: 600;
+  color: var(--text-ink);
+  line-height: 1.2;
+}
+
+.folder-accordion-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.folder-accordion-body {
+  margin-left: 1.35rem;
+  padding-left: 0.85rem;
+  border-left: 2px solid var(--border-hairline);
+  margin-bottom: 0.5rem;
+}
+
+.folder-accordion-body .folder-accordion:last-child,
+.folder-accordion-body .note-row:last-child {
+  border-bottom: none;
+}
+
+.tree-folder-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  padding: 0.42rem 0.45rem;
+  margin-top: 0.45rem;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  text-align: left;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-ink);
+  transition: background-color 0.15s ease;
+}
+
+.tree-folder-btn:hover {
+  background-color: var(--bg-elevated);
+}
+
 /* Badges */
 .badge {
   display: inline-flex;
