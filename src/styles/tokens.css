@@ -1,0 +1,90 @@
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+
+  --bg-page: #faf8f4;
+  --bg-surface: #ffffff;
+  --bg-elevated: #f3eee4;
+  --bg-subtle: #ebe4d7;
+  --bg-callout: #f6f2ea;
+
+  --text-ink: #161412;
+  --text-body: #2d2925;
+  --text-secondary: #625b51;
+  --text-muted: #8a8275;
+
+  --border-hairline: #e4ddd0;
+  --border-strong: #cfc5b4;
+
+  --accent-primary: #185838;
+  --accent-primary-hover: #114128;
+  --accent-primary-soft: rgba(24, 88, 56, 0.09);
+  --accent-primary-fg: #faf8f4;
+  --accent-brass: #8a6c34;
+  --accent-brass-soft: rgba(138, 108, 52, 0.11);
+
+  --status-pending-bg: rgba(155, 119, 56, 0.12);
+  --status-pending-fg: #7c5c22;
+  --status-review-bg: rgba(34, 86, 130, 0.11);
+  --status-review-fg: #1f4f78;
+  --status-accepted-bg: rgba(39, 102, 68, 0.11);
+  --status-accepted-fg: #21573a;
+  --status-rejected-bg: rgba(138, 43, 24, 0.1);
+  --status-rejected-fg: #7c2413;
+
+  --shadow-editorial: 0 18px 44px -26px rgba(22, 20, 18, 0.14);
+  --shadow-modal: 0 28px 70px -24px rgba(22, 20, 18, 0.28);
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg-page: #11100e;
+  --bg-surface: #181613;
+  --bg-elevated: #211e1a;
+  --bg-subtle: #2a2621;
+  --bg-callout: #1c1a16;
+
+  --text-ink: #f3eee5;
+  --text-body: #d4ccc0;
+  --text-secondary: #a69d90;
+  --text-muted: #7b7367;
+
+  --border-hairline: #2b2722;
+  --border-strong: #3e3830;
+
+  --accent-primary: #5bb381;
+  --accent-primary-hover: #72c596;
+  --accent-primary-soft: rgba(91, 179, 129, 0.14);
+  --accent-primary-fg: #0d1611;
+  --accent-brass: #cba866;
+  --accent-brass-soft: rgba(203, 168, 102, 0.14);
+
+  --status-pending-bg: rgba(203, 168, 102, 0.14);
+  --status-pending-fg: #e2c282;
+  --status-review-bg: rgba(114, 170, 224, 0.14);
+  --status-review-fg: #93c4f3;
+  --status-accepted-bg: rgba(98, 179, 132, 0.14);
+  --status-accepted-fg: #8ad6a9;
+  --status-rejected-bg: rgba(216, 122, 94, 0.14);
+  --status-rejected-fg: #e89981;
+
+  --shadow-editorial: 0 22px 48px -24px rgba(0, 0, 0, 0.55);
+  --shadow-modal: 0 30px 80px -20px rgba(0, 0, 0, 0.72);
+}
+
+:root {
+  --font-display: 'Cormorant Garamond', 'Instrument Serif', Georgia, serif;
+  --font-editorial: 'Instrument Serif', 'Cormorant Garamond', Georgia, serif;
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --container-max: 1460px;
+  --reading-measure: 100%;
+  --ease-editorial: cubic-bezier(0.22, 1, 0.36, 1);
+}
