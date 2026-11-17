@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useLayoutEffect } from 'react'
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { Footer } from './components/Footer'
 import { Header } from './components/Header'
@@ -11,12 +11,32 @@ import { NoteReaderPage } from './pages/NoteReaderPage'
 import { SubjectDetailPage } from './pages/SubjectDetailPage'
 import { TicketsPage } from './pages/TicketsPage'
 
-function ScrollToTop() {
-  const { pathname, search } = useLocation()
+if (typeof window !== 'undefined' && 'scrollRestoration' in window.history) {
+  window.history.scrollRestoration = 'manual'
+}
 
-  useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'instant' })
-  }, [pathname, search])
+function forceScrollToTop() {
+  window.scrollTo(0, 0)
+  document.documentElement.scrollTop = 0
+  document.body.scrollTop = 0
+  if (document.scrollingElement) {
+    document.scrollingElement.scrollTop = 0
+  }
+}
+
+function ScrollToTop() {
+  const { key, pathname, search, hash } = useLocation()
+
+  useLayoutEffect(() => {
+    forceScrollToTop()
+    const rafId = window.requestAnimationFrame(forceScrollToTop)
+    const timerId = window.setTimeout(forceScrollToTop, 60)
+
+    return () => {
+      window.cancelAnimationFrame(rafId)
+      window.clearTimeout(timerId)
+    }
+  }, [key, pathname, search, hash])
 
   return null
 }
