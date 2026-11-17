@@ -1,12 +1,53 @@
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowRight, GitBranch } from 'lucide-react'
 import { useVault } from '../context/vaultStore'
+import { formatTagLabel, groupSubjectsByCurriculum } from '../services/vaultService'
+
+function renderCourseTitle(label: string) {
+  const parts = label.split(' ')
+  if (parts.length > 1) {
+    const last = parts[parts.length - 1]
+    const head = parts.slice(0, -1).join(' ')
+    return (
+      <>
+        {head} <em>{last}</em>
+      </>
+    )
+  }
+  return label
+}
 
 export function HomePage() {
   const { catalog, loading, error, refreshCatalog } = useVault()
+  const [selectedTag, setSelectedTag] = useState<string>('totes')
 
   const publishedCount = catalog ? catalog.allNotes.filter((n) => !n.isDraft).length : 0
   const draftCount = catalog ? catalog.allNotes.filter((n) => n.isDraft).length : 0
+
+  const tagOptions = useMemo(() => {
+    if (!catalog) return []
+    const set = new Set<string>()
+    for (const s of catalog.subjects) {
+      for (const t of s.meta?.tags ?? []) {
+        set.add(t.toLowerCase())
+      }
+    }
+    return Array.from(set)
+  }, [catalog])
+
+  const filteredSubjects = useMemo(() => {
+    if (!catalog) return []
+    if (selectedTag === 'totes') return catalog.subjects
+    return catalog.subjects.filter((s) =>
+      (s.meta?.tags ?? []).some((t) => t.toLowerCase() === selectedTag),
+    )
+  }, [catalog, selectedTag])
+
+  const courseGroups = useMemo(
+    () => groupSubjectsByCurriculum(filteredSubjects),
+    [filteredSubjects],
+  )
 
   return (
     <div>
@@ -76,6 +117,30 @@ export function HomePage() {
                 Assignatures del <em>grau</em>
               </h2>
             </div>
+
+            {tagOptions.length > 1 && (
+              <div className="filter-pills-bar" style={{ marginBottom: 0 }}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedTag('totes')}
+                  className={selectedTag === 'totes' ? 'btn-primary' : 'btn-secondary'}
+                  style={{ padding: '0.4rem 0.85rem', fontSize: '0.82rem' }}
+                >
+                  Totes
+                </button>
+                {tagOptions.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => setSelectedTag(tag)}
+                    className={selectedTag === tag ? 'btn-primary' : 'btn-secondary'}
+                    style={{ padding: '0.4rem 0.85rem', fontSize: '0.82rem' }}
+                  >
+                    {formatTagLabel(tag)}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {loading && !catalog ? (
@@ -84,36 +149,82 @@ export function HomePage() {
                 <div key={idx} className="skeleton-box" style={{ height: '240px' }} />
               ))}
             </div>
+          ) : courseGroups.length === 0 ? (
+            <div className="editorial-card" style={{ textAlign: 'center', padding: '2.5rem 1.5rem' }}>
+              <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
+                Cap assignatura coincideix amb el filtre seleccionat.
+              </p>
+            </div>
           ) : (
-            <div className="subjects-grid">
-              {catalog?.subjects.map((subject) => (
-                <Link
-                  key={subject.slug}
-                  to={`/assignatura/${subject.slug}`}
-                  className="subject-card"
-                >
-                  <div>
-                    <div className="subject-card-top">
-                      <span className="subject-numeral">{subject.romanNumeral}</span>
-                      <span className="subject-count">
-                        {subject.totalNotes} {subject.totalNotes === 1 ? 'document' : 'documents'}
-                      </span>
+            <div className="curriculum-stack">
+              {courseGroups.map((course) => (
+                <div key={course.label} className="course-group">
+                  <div className="course-group-header">
+                    <h3 className="course-group-title">{renderCourseTitle(course.label)}</h3>
+                  </div>
+
+                  {course.semesters.map((semester) => (
+                    <div key={`${course.label}-${semester.label}`} className="semester-group">
+                      <div className="semester-group-header">
+                        <h4 className="semester-group-title">{semester.label}</h4>
+                        <span className="semester-group-count">
+                          {semester.subjects.length}{' '}
+                          {semester.subjects.length === 1 ? 'assignatura' : 'assignatures'}
+                        </span>
+                      </div>
+
+                      <div className="subjects-grid">
+                        {semester.subjects.map((subject) => {
+                          const tags = subject.meta?.tags ?? []
+
+                          return (
+                            <Link
+                              key={subject.slug}
+                              to={`/assignatura/${subject.slug}`}
+                              className="subject-card"
+                            >
+                              <div>
+                                <div className="subject-card-top">
+                                  <span className="subject-numeral">{subject.romanNumeral}</span>
+                                  <span className="subject-count">
+                                    {subject.totalNotes}{' '}
+                                    {subject.totalNotes === 1 ? 'document' : 'documents'}
+                                  </span>
+                                </div>
+
+                                <h5 className="subject-name">{subject.name}</h5>
+
+                                {tags.length > 0 && (
+                                  <div className="subject-meta-tags">
+                                    {tags.map((tag) => (
+                                      <span
+                                        key={tag}
+                                        className={`subject-meta-tag ${tag.toLowerCase().includes('optativ') ? 'tag-optativa' : ''}`}
+                                      >
+                                        {formatTagLabel(tag)}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+
+                                <ul className="subject-preview-list">
+                                  {subject.allNotes.slice(0, 3).map((note) => (
+                                    <li key={note.path}>{note.title}</li>
+                                  ))}
+                                </ul>
+                              </div>
+
+                              <div className="subject-card-footer">
+                                <span>Obrir dossier</span>
+                                <ArrowRight size={15} />
+                              </div>
+                            </Link>
+                          )
+                        })}
+                      </div>
                     </div>
-
-                    <h3 className="subject-name">{subject.name}</h3>
-
-                    <ul className="subject-preview-list">
-                      {subject.allNotes.slice(0, 3).map((note) => (
-                        <li key={note.path}>{note.title}</li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div className="subject-card-footer">
-                    <span>Obrir dossier</span>
-                    <ArrowRight size={15} />
-                  </div>
-                </Link>
+                  ))}
+                </div>
               ))}
             </div>
           )}

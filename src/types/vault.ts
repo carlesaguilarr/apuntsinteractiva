@@ -32,6 +32,14 @@ export interface VaultFolderNode {
   totalNotes: number
 }
 
+export interface SubjectMetadata {
+  curs?: string
+  semestre?: string
+  tags: string[]
+  ordre?: number
+  descripcio?: string
+}
+
 export interface VaultSubject {
   name: string
   slug: string
@@ -41,6 +49,7 @@ export interface VaultSubject {
   draftNotes: number
   rootFolder: VaultFolderNode
   allNotes: VaultNoteItem[]
+  meta?: SubjectMetadata
 }
 
 export interface VaultCatalog {

@@ -2,6 +2,7 @@ import type {
   GitHubTreeNode,
   LoadedNote,
   MarkdownHeading,
+  SubjectMetadata,
   VaultCatalog,
   VaultFolderNode,
   VaultNoteItem,
@@ -12,7 +13,7 @@ export const VAULT_OWNER = 'carlesaguilarr'
 export const VAULT_REPO = 'Vault'
 export const VAULT_BRANCH = 'main'
 
-const TREE_CACHE_KEY = 'apunts_vault_tree_v1'
+const TREE_CACHE_KEY = 'apunts_vault_tree_v2'
 const NOTE_CACHE_PREFIX = 'apunts_vault_note_v1_'
 const CACHE_TTL_MS = 15 * 60 * 1000 // 15 minuts
 
@@ -137,11 +138,256 @@ function buildFolderTree(
   return root
 }
 
+const COURSE_LABELS: Record<string, { label: string; rank: number }> = {
+  primer: { label: 'Primer curs', rank: 1 },
+  '1': { label: 'Primer curs', rank: 1 },
+  '1r': { label: 'Primer curs', rank: 1 },
+  '1r curs': { label: 'Primer curs', rank: 1 },
+  'primer curs': { label: 'Primer curs', rank: 1 },
+  segon: { label: 'Segon curs', rank: 2 },
+  '2': { label: 'Segon curs', rank: 2 },
+  '2n': { label: 'Segon curs', rank: 2 },
+  '2n curs': { label: 'Segon curs', rank: 2 },
+  'segon curs': { label: 'Segon curs', rank: 2 },
+  tercer: { label: 'Tercer curs', rank: 3 },
+  '3': { label: 'Tercer curs', rank: 3 },
+  '3r': { label: 'Tercer curs', rank: 3 },
+  '3r curs': { label: 'Tercer curs', rank: 3 },
+  'tercer curs': { label: 'Tercer curs', rank: 3 },
+  quart: { label: 'Quart curs', rank: 4 },
+  '4': { label: 'Quart curs', rank: 4 },
+  '4t': { label: 'Quart curs', rank: 4 },
+  '4t curs': { label: 'Quart curs', rank: 4 },
+  'quart curs': { label: 'Quart curs', rank: 4 },
+}
+
+const SEMESTER_LABELS: Record<string, { label: string; rank: number }> = {
+  primer: { label: 'Primer semestre', rank: 1 },
+  '1': { label: 'Primer semestre', rank: 1 },
+  '1r': { label: 'Primer semestre', rank: 1 },
+  '1r semestre': { label: 'Primer semestre', rank: 1 },
+  'primer semestre': { label: 'Primer semestre', rank: 1 },
+  segon: { label: 'Segon semestre', rank: 2 },
+  '2': { label: 'Segon semestre', rank: 2 },
+  '2n': { label: 'Segon semestre', rank: 2 },
+  '2n semestre': { label: 'Segon semestre', rank: 2 },
+  'segon semestre': { label: 'Segon semestre', rank: 2 },
+  anual: { label: 'Anual', rank: 3 },
+}
+
+const TAG_LABELS: Record<string, string> = {
+  obligatoria: 'Obligatòria',
+  obligatòria: 'Obligatòria',
+  optativa: 'Optativa',
+  basica: 'Formació bàsica',
+  bàsica: 'Formació bàsica',
+  troncal: 'Troncal',
+  practiques: 'Pràctiques',
+  pràctiques: 'Pràctiques',
+  tfg: 'TFG',
+}
+
+function capitalizeWord(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
+}
+
+export function formatCourseLabel(curs?: string): string | null {
+  if (!curs?.trim()) return null
+  const key = curs.trim().toLowerCase()
+  return COURSE_LABELS[key]?.label ?? capitalizeWord(curs)
+}
+
+export function formatSemesterLabel(semestre?: string): string | null {
+  if (!semestre?.trim()) return null
+  const key = semestre.trim().toLowerCase()
+  return SEMESTER_LABELS[key]?.label ?? capitalizeWord(semestre)
+}
+
+export function formatCourseSemesterLabel(meta?: SubjectMetadata): string | null {
+  const curs = formatCourseLabel(meta?.curs)
+  const semestre = formatSemesterLabel(meta?.semestre)
+  if (curs && semestre) return `${curs} · ${semestre}`
+  return curs || semestre || null
+}
+
+export function formatTagLabel(tag: string): string {
+  const key = tag.trim().toLowerCase()
+  return TAG_LABELS[key] ?? capitalizeWord(tag.replace(/-/g, ' '))
+}
+
+function getCourseRank(curs?: string): number {
+  if (!curs?.trim()) return 99
+  return COURSE_LABELS[curs.trim().toLowerCase()]?.rank ?? 50
+}
+
+function getSemesterRank(semestre?: string): number {
+  if (!semestre?.trim()) return 99
+  return SEMESTER_LABELS[semestre.trim().toLowerCase()]?.rank ?? 50
+}
+
+export interface SemesterGroup {
+  label: string
+  rank: number
+  subjects: VaultSubject[]
+}
+
+export interface CourseGroup {
+  label: string
+  rank: number
+  semesters: SemesterGroup[]
+}
+
+export function groupSubjectsByCurriculum(subjects: VaultSubject[]): CourseGroup[] {
+  const courseMap = new Map<string, { rank: number; semMap: Map<string, SemesterGroup> }>()
+
+  for (const subject of subjects) {
+    const courseLabel = formatCourseLabel(subject.meta?.curs) ?? 'Altres assignatures'
+    const courseRank = getCourseRank(subject.meta?.curs)
+    const semLabel = formatSemesterLabel(subject.meta?.semestre) ?? 'General'
+    const semRank = getSemesterRank(subject.meta?.semestre)
+
+    let courseEntry = courseMap.get(courseLabel)
+    if (!courseEntry) {
+      courseEntry = { rank: courseRank, semMap: new Map() }
+      courseMap.set(courseLabel, courseEntry)
+    }
+
+    let semEntry = courseEntry.semMap.get(semLabel)
+    if (!semEntry) {
+      semEntry = { label: semLabel, rank: semRank, subjects: [] }
+      courseEntry.semMap.set(semLabel, semEntry)
+    }
+
+    semEntry.subjects.push(subject)
+  }
+
+  return Array.from(courseMap.entries())
+    .map(([label, data]) => ({
+      label,
+      rank: data.rank,
+      semesters: Array.from(data.semMap.values()).sort((a, b) => a.rank - b.rank),
+    }))
+    .sort((a, b) => a.rank - b.rank)
+}
+
+function unquoteYaml(val: string): string {
+  const trimmed = val.trim()
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim()
+  }
+  return trimmed
+}
+
+export function parseSubjectMeta(markdown: string): SubjectMetadata {
+  const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/)
+  if (!match) return { tags: [] }
+
+  const lines = match[1].split(/\r?\n/)
+  const meta: SubjectMetadata = { tags: [] }
+  let currentArrayKey: string | null = null
+
+  for (const rawLine of lines) {
+    const listMatch = rawLine.match(/^\s*-\s+(.+)$/)
+    if (listMatch && currentArrayKey === 'tags') {
+      const tag = unquoteYaml(listMatch[1])
+      if (tag) meta.tags.push(tag)
+      continue
+    }
+
+    const kvMatch = rawLine.match(/^([a-zA-Z0-9_-]+)\s*:\s*(.*)$/)
+    if (!kvMatch) {
+      currentArrayKey = null
+      continue
+    }
+
+    const key = kvMatch[1].trim().toLowerCase()
+    const rawVal = kvMatch[2].trim()
+
+    if (key === 'tags') {
+      if (!rawVal) {
+        currentArrayKey = 'tags'
+      } else if (rawVal.startsWith('[') && rawVal.endsWith(']')) {
+        currentArrayKey = null
+        const items = rawVal
+          .slice(1, -1)
+          .split(',')
+          .map((s) => unquoteYaml(s))
+          .filter(Boolean)
+        meta.tags.push(...items)
+      } else {
+        currentArrayKey = null
+        const single = unquoteYaml(rawVal)
+        if (single) meta.tags.push(single)
+      }
+      continue
+    }
+
+    currentArrayKey = null
+    const val = unquoteYaml(rawVal)
+    if (!val) continue
+
+    if (key === 'curs') meta.curs = val
+    else if (key === 'semestre') meta.semestre = val
+    else if (key === 'descripcio' || key === 'descripció') meta.descripcio = val
+    else if (key === 'ordre') {
+      const parsed = Number(val)
+      if (!Number.isNaN(parsed)) meta.ordre = parsed
+    }
+  }
+
+  return meta
+}
+
+async function fetchSubjectsMetadata(
+  tree: GitHubTreeNode[],
+): Promise<Record<string, SubjectMetadata>> {
+  const metaNodes = tree.filter((node) => {
+    if (node.type !== 'blob') return false
+    const parts = node.path.split('/')
+    return (
+      parts.length === 2 &&
+      !parts[0].startsWith('.') &&
+      !parts[0].startsWith('_') &&
+      parts[1].toLowerCase() === '_meta.md'
+    )
+  })
+
+  if (metaNodes.length === 0) return {}
+
+  const entries = await Promise.all(
+    metaNodes.map(async (node) => {
+      const subjectName = node.path.split('/')[0]
+      try {
+        const res = await fetch(getRawFileUrl(node.path))
+        if (!res.ok) return null
+        const text = await res.text()
+        return [subjectName, parseSubjectMeta(text)] as const
+      } catch {
+        return null
+      }
+    }),
+  )
+
+  const result: Record<string, SubjectMetadata> = {}
+  for (const entry of entries) {
+    if (entry) {
+      result[entry[0]] = entry[1]
+    }
+  }
+  return result
+}
+
 export function buildCatalogFromTree(
   tree: GitHubTreeNode[],
   fetchedAt: string,
   fromCache: boolean,
   rateLimited = false,
+  metaBySubject: Record<string, SubjectMetadata> = {},
 ): VaultCatalog {
   const allNotes: VaultNoteItem[] = []
   const allAssets: VaultNoteItem[] = []
@@ -201,9 +447,17 @@ export function buildCatalogFromTree(
     subjectMap.set(subjectName, existing)
   }
 
-  const sortedSubjectNames = Array.from(subjectMap.keys()).sort((a, b) =>
-    a.localeCompare(b, 'ca', { numeric: true, sensitivity: 'base' }),
-  )
+  const sortedSubjectNames = Array.from(subjectMap.keys()).sort((a, b) => {
+    const metaA = metaBySubject[a]
+    const metaB = metaBySubject[b]
+    const courseDiff = getCourseRank(metaA?.curs) - getCourseRank(metaB?.curs)
+    if (courseDiff !== 0) return courseDiff
+    const semDiff = getSemesterRank(metaA?.semestre) - getSemesterRank(metaB?.semestre)
+    if (semDiff !== 0) return semDiff
+    const orderDiff = (metaA?.ordre ?? 999) - (metaB?.ordre ?? 999)
+    if (orderDiff !== 0) return orderDiff
+    return a.localeCompare(b, 'ca', { numeric: true, sensitivity: 'base' })
+  })
 
   const subjects: VaultSubject[] = sortedSubjectNames.map((name, index) => {
     const notes = sortNodesNaturally(subjectMap.get(name) ?? [])
@@ -216,6 +470,7 @@ export function buildCatalogFromTree(
       draftNotes: notes.filter((n) => n.isDraft).length,
       rootFolder: buildFolderTree(name, name, notes),
       allNotes: notes,
+      meta: metaBySubject[name],
     }
   })
 
@@ -232,6 +487,7 @@ export function buildCatalogFromTree(
 
 interface CachedTreePayload {
   tree: GitHubTreeNode[]
+  metaBySubject: Record<string, SubjectMetadata>
   fetchedAt: string
   timestamp: number
 }
@@ -249,7 +505,13 @@ export async function fetchVaultCatalog(forceRefresh = false): Promise<VaultCata
   }
 
   if (!forceRefresh && cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-    return buildCatalogFromTree(cached.tree, cached.fetchedAt, true)
+    return buildCatalogFromTree(
+      cached.tree,
+      cached.fetchedAt,
+      true,
+      false,
+      cached.metaBySubject ?? {},
+    )
   }
 
   const url = `https://api.github.com/repos/${VAULT_OWNER}/${VAULT_REPO}/git/trees/${VAULT_BRANCH}?recursive=1`
@@ -263,7 +525,13 @@ export async function fetchVaultCatalog(forceRefresh = false): Promise<VaultCata
 
     if (!response.ok) {
       if (cached) {
-        return buildCatalogFromTree(cached.tree, cached.fetchedAt, true, response.status === 403)
+        return buildCatalogFromTree(
+          cached.tree,
+          cached.fetchedAt,
+          true,
+          response.status === 403,
+          cached.metaBySubject ?? {},
+        )
       }
       throw new Error(
         response.status === 403
@@ -274,9 +542,11 @@ export async function fetchVaultCatalog(forceRefresh = false): Promise<VaultCata
 
     const data = (await response.json()) as { tree?: GitHubTreeNode[] }
     const tree = data.tree ?? []
+    const metaBySubject = await fetchSubjectsMetadata(tree)
     const nowIso = new Date().toISOString()
     const payload: CachedTreePayload = {
       tree,
+      metaBySubject,
       fetchedAt: nowIso,
       timestamp: Date.now(),
     }
@@ -285,10 +555,16 @@ export async function fetchVaultCatalog(forceRefresh = false): Promise<VaultCata
     sessionStorage.setItem(TREE_CACHE_KEY, serialized)
     localStorage.setItem(TREE_CACHE_KEY, serialized)
 
-    return buildCatalogFromTree(tree, nowIso, false)
+    return buildCatalogFromTree(tree, nowIso, false, false, metaBySubject)
   } catch (err) {
     if (cached) {
-      return buildCatalogFromTree(cached.tree, cached.fetchedAt, true, true)
+      return buildCatalogFromTree(
+        cached.tree,
+        cached.fetchedAt,
+        true,
+        true,
+        cached.metaBySubject ?? {},
+      )
     }
     throw err
   }

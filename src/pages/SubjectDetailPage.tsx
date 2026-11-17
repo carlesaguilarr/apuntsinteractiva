@@ -9,6 +9,7 @@ import {
   FolderOpen,
 } from 'lucide-react'
 import { useVault } from '../context/vaultStore'
+import { formatCourseSemesterLabel, formatTagLabel } from '../services/vaultService'
 import type { VaultFolderNode, VaultNoteItem } from '../types/vault'
 
 type StatusFilter = 'tots' | 'publicats' | 'esborranys'
@@ -167,6 +168,23 @@ export function SubjectDetailPage() {
           >
             {subject.name}
           </h1>
+          {(formatCourseSemesterLabel(subject.meta) || (subject.meta?.tags.length ?? 0) > 0) && (
+            <div className="subject-meta-tags" style={{ marginTop: '0.9rem', marginBottom: 0 }}>
+              {formatCourseSemesterLabel(subject.meta) && (
+                <span className="subject-meta-pill">
+                  {formatCourseSemesterLabel(subject.meta)}
+                </span>
+              )}
+              {(subject.meta?.tags ?? []).map((tag) => (
+                <span
+                  key={tag}
+                  className={`subject-meta-tag ${tag.toLowerCase().includes('optativ') ? 'tag-optativa' : ''}`}
+                >
+                  {formatTagLabel(tag)}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         <Link
