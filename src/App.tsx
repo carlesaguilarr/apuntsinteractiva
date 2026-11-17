@@ -1,4 +1,5 @@
-import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { useEffect } from 'react'
+import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { Footer } from './components/Footer'
 import { Header } from './components/Header'
 import { SearchModal } from './components/SearchModal'
@@ -10,11 +11,22 @@ import { NoteReaderPage } from './pages/NoteReaderPage'
 import { SubjectDetailPage } from './pages/SubjectDetailPage'
 import { TicketsPage } from './pages/TicketsPage'
 
+function ScrollToTop() {
+  const { pathname, search } = useLocation()
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' })
+  }, [pathname, search])
+
+  return null
+}
+
 export function App() {
   return (
     <ThemeProvider>
       <VaultProvider>
         <HashRouter>
+          <ScrollToTop />
           <div className="app-shell">
             <Header />
             <main className="main-content">

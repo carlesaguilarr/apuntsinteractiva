@@ -3,10 +3,13 @@ import { Link, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
   ArrowRight,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   Clock,
   ExternalLink,
   FileText,
+  List,
   MessageSquarePlus,
 } from 'lucide-react'
 import { FolderTree } from '../components/FolderTree'
@@ -20,6 +23,7 @@ export function NoteReaderPage() {
   const { catalog, loading: catalogLoading } = useVault()
   const [loadedState, setLoadedState] = useState<{ path: string; note: LoadedNote } | null>(null)
   const [errorState, setErrorState] = useState<{ path: string; message: string } | null>(null)
+  const [indexOpen, setIndexOpen] = useState(false)
 
   const noteItem = useMemo(() => {
     if (!catalog || !noteSlug) return null
@@ -45,10 +49,6 @@ export function NoteReaderPage() {
       nextNote: idx >= 0 && idx < subject.allNotes.length - 1 ? subject.allNotes[idx + 1] : null,
     }
   }, [subject, noteItem])
-
-  useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'instant' })
-  }, [noteItem?.path])
 
   useEffect(() => {
     if (!catalog || !noteItem || noteItem.extension === 'pdf') return
@@ -124,14 +124,49 @@ export function NoteReaderPage() {
         <span style={{ color: 'var(--text-ink)' }}>{noteItem.title}</span>
       </nav>
 
-      <div className="reader-layout">
-        <aside className="reader-sidebar" aria-label="Índex de l’assignatura">
-          <h2 className="sidebar-heading">
-            {subject ? `Índex · ${subject.romanNumeral}` : 'Navegació'}
-          </h2>
-          {subject && <FolderTree folder={subject.rootFolder} activePath={noteItem.path} />}
-        </aside>
+      {subject && (
+        <section className="subject-index-drawer" aria-label="Índex de l’assignatura">
+          <button
+            type="button"
+            className="subject-index-toggle"
+            aria-expanded={indexOpen}
+            onClick={() => setIndexOpen((open) => !open)}
+          >
+            <span className="subject-index-toggle-label">
+              <List size={15} color="var(--accent-primary)" />
+              <span>
+                Índex de l’assignatura · <strong>{subject.name}</strong>
+              </span>
+              <span className="subject-index-count">
+                ({subject.totalNotes} {subject.totalNotes === 1 ? 'document' : 'documents'})
+              </span>
+            </span>
+            <span className="subject-index-chevron">
+              {indexOpen ? (
+                <>
+                  Amagar <ChevronUp size={15} />
+                </>
+              ) : (
+                <>
+                  Desplegar <ChevronDown size={15} />
+                </>
+              )}
+            </span>
+          </button>
 
+          {indexOpen && (
+            <div className="subject-index-panel">
+              <FolderTree
+                folder={subject.rootFolder}
+                activePath={noteItem.path}
+                onSelectNote={() => setIndexOpen(false)}
+              />
+            </div>
+          )}
+        </section>
+      )}
+
+      <div className="reader-layout">
         <article className="article-paper">
           <header className="article-header">
             <div className="article-kicker">

@@ -630,7 +630,68 @@ button {
   text-decoration: underline;
 }
 
-/* Reader Layout (3 columns on wide screen: Explorer, Article, TOC) */
+/* Collapsible Subject Index Drawer */
+.subject-index-drawer {
+  margin-bottom: 1.35rem;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-surface);
+}
+
+.subject-index-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.72rem 1rem;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-size: 0.88rem;
+  color: var(--text-ink);
+  transition: background-color 0.15s ease;
+}
+
+.subject-index-toggle:hover {
+  background-color: var(--bg-elevated);
+}
+
+.subject-index-toggle-label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.subject-index-count {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.subject-index-chevron {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-primary);
+  flex-shrink: 0;
+}
+
+.subject-index-panel {
+  border-top: 1px solid var(--border-hairline);
+  padding: 0.85rem 1rem 1rem;
+  max-height: 50vh;
+  overflow-y: auto;
+  background-color: var(--bg-callout);
+}
+
+/* Reader Layout (Article + Right TOC on wide screen) */
 .reader-layout {
   display: grid;
   grid-template-columns: 1fr;
@@ -640,28 +701,8 @@ button {
 
 @media (min-width: 1024px) {
   .reader-layout {
-    grid-template-columns: 235px minmax(0, 1fr) 195px;
-    gap: clamp(1.25rem, 2vw, 2rem);
-  }
-}
-
-.reader-sidebar {
-  position: sticky;
-  top: 6.5rem;
-  max-height: calc(100vh - 8rem);
-  overflow-y: auto;
-  padding-right: 0.75rem;
-  border-right: 1px solid var(--border-hairline);
-}
-
-@media (max-width: 1023px) {
-  .reader-sidebar {
-    position: static;
-    max-height: none;
-    border-right: none;
-    border-bottom: 1px solid var(--border-hairline);
-    padding-right: 0;
-    padding-bottom: 1.25rem;
+    grid-template-columns: minmax(0, 1fr) 215px;
+    gap: clamp(1.5rem, 2.5vw, 2.25rem);
   }
 }
 

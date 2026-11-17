@@ -6,9 +6,15 @@ interface FolderTreeProps {
   folder: VaultFolderNode
   activePath?: string
   depth?: number
+  onSelectNote?: () => void
 }
 
-export function FolderTree({ folder, activePath, depth = 0 }: FolderTreeProps) {
+export function FolderTree({
+  folder,
+  activePath,
+  depth = 0,
+  onSelectNote,
+}: FolderTreeProps) {
   return (
     <div style={{ paddingLeft: depth > 0 ? '0.65rem' : 0 }}>
       {depth > 0 && (
@@ -24,6 +30,7 @@ export function FolderTree({ folder, activePath, depth = 0 }: FolderTreeProps) {
             key={note.path}
             to={`/apunt/${note.slug}`}
             className={`tree-note-link ${activePath === note.path ? 'active' : ''}`}
+            onClick={onSelectNote}
           >
             <span
               style={{
@@ -51,7 +58,13 @@ export function FolderTree({ folder, activePath, depth = 0 }: FolderTreeProps) {
       </div>
 
       {folder.subfolders.map((sub) => (
-        <FolderTree key={sub.path} folder={sub} activePath={activePath} depth={depth + 1} />
+        <FolderTree
+          key={sub.path}
+          folder={sub}
+          activePath={activePath}
+          depth={depth + 1}
+          onSelectNote={onSelectNote}
+        />
       ))}
     </div>
   )
