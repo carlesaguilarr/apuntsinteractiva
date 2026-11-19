@@ -19,7 +19,7 @@ function renderCourseTitle(label: string) {
 }
 
 export function HomePage() {
-  const { catalog, loading, error, refreshCatalog } = useVault()
+  const { catalog, loading, error, refreshFeedback, refreshCatalog } = useVault()
   const [selectedTag, setSelectedTag] = useState<string>('totes')
 
   const publishedCount = catalog ? catalog.allNotes.filter((n) => !n.isDraft).length : 0
@@ -87,7 +87,7 @@ export function HomePage() {
 
       <section className="section-block">
         <div className="container">
-          {error && (
+          {error && refreshFeedback?.type !== 'error' && (
             <div className="notice-banner" role="alert">
               <div style={{ flex: 1 }}>
                 <strong>Avís de connexió:</strong> {error}

@@ -1,18 +1,27 @@
 import { useState } from 'react'
 import { Link, NavLink } from 'react-router-dom'
-import { Menu, Moon, RefreshCw, Search, Sun, X } from 'lucide-react'
+import { AlertCircle, Check, Menu, Moon, RefreshCw, Search, Sun, X } from 'lucide-react'
 import { useTheme } from '../context/themeStore'
 import { useVault } from '../context/vaultStore'
 
 export function Header() {
   const { theme, toggleTheme } = useTheme()
-  const { catalog, loading, refreshCatalog, setSearchOpen } = useVault()
+  const {
+    catalog,
+    loading,
+    refreshing,
+    refreshFeedback,
+    clearRefreshFeedback,
+    refreshCatalog,
+    setSearchOpen,
+  } = useVault()
   const [menuOpen, setMenuOpen] = useState(false)
 
   const formattedSync = catalog?.fetchedAt
     ? new Date(catalog.fetchedAt).toLocaleTimeString('ca-ES', {
         hour: '2-digit',
         minute: '2-digit',
+        second: '2-digit',
       })
     : '—'
 
@@ -21,36 +30,51 @@ export function Header() {
       <div className="masthead-strip">
         <div className="container masthead-strip-inner">
           <span>UAB · Grau en Comunicació Interactiva</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div className="masthead-sync-group">
             <span>
               {catalog
                 ? `${catalog.subjects.length} assignatures · ${catalog.allNotes.length} apunts · Sincronitzat a les ${formattedSync}`
                 : 'Connectant amb l’arxiu...'}
             </span>
+            {refreshFeedback?.type === 'updated' && (
+              <span className="sync-status-pill is-success" role="status" aria-live="polite">
+                <Check size={11} />
+                {refreshFeedback.message}
+              </span>
+            )}
             <button
               type="button"
+              className="sync-refresh-btn"
               onClick={() => void refreshCatalog()}
-              title="Actualitzar índex des de GitHub"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                border: 'none',
-                background: 'transparent',
-                padding: 0,
-                fontFamily: 'inherit',
-                fontSize: 'inherit',
-                letterSpacing: 'inherit',
-                textTransform: 'inherit',
-                color: 'var(--accent-primary)',
-              }}
+              disabled={refreshing}
+              aria-busy={refreshing}
+              title="Actualitzar índex i apunts des de GitHub"
             >
-              <RefreshCw size={11} className={loading ? 'spin' : ''} />
-              Actualitzar
+              <RefreshCw size={11} className={refreshing || loading ? 'spin' : ''} />
+              {refreshing ? 'Actualitzant...' : 'Actualitzar'}
             </button>
           </div>
         </div>
       </div>
+
+      {refreshFeedback?.type === 'error' && (
+        <div className="masthead-error-strip" role="alert">
+          <div className="container masthead-error-strip-inner">
+            <span className="masthead-error-msg">
+              <AlertCircle size={13} style={{ flexShrink: 0 }} />
+              {refreshFeedback.message}
+            </span>
+            <button
+              type="button"
+              className="masthead-error-close"
+              onClick={clearRefreshFeedback}
+              aria-label="Tancar avís"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="container masthead-main">
         <Link to="/" className="brand-mark" onClick={() => setMenuOpen(false)}>

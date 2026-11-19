@@ -17,7 +17,7 @@ export function TicketsPage() {
 
   const handleRefresh = async () => {
     setLoading(true)
-    const res = await fetchTickets()
+    const res = await fetchTickets(true)
     setTickets(res.tickets)
     setGithubError(res.githubError ?? null)
     setLoading(false)
@@ -81,8 +81,8 @@ export function TicketsPage() {
             onClick={() => void handleRefresh()}
             disabled={loading}
           >
-            <RefreshCw size={15} />
-            Actualitzar
+            <RefreshCw size={15} className={loading ? 'spin' : ''} />
+            {loading ? 'Actualitzant...' : 'Actualitzar'}
           </button>
           <Link to="/colaborar" className="btn-primary">
             <FilePlus2 size={16} />

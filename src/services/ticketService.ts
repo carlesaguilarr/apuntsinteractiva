@@ -104,16 +104,19 @@ function saveLocalTicket(ticket: TicketItem): void {
   localStorage.setItem(LOCAL_TICKETS_KEY, JSON.stringify([ticket, ...existing]))
 }
 
-export async function fetchTickets(): Promise<{
+export async function fetchTickets(forceRefresh = false): Promise<{
   tickets: TicketItem[]
   githubError?: string
 }> {
   const localTickets = getLocalTickets()
-  const url = `https://api.github.com/repos/${VAULT_OWNER}/${VAULT_REPO}/issues?state=all&per_page=50`
+  const url = `https://api.github.com/repos/${VAULT_OWNER}/${VAULT_REPO}/issues?state=all&per_page=50${
+    forceRefresh ? `&_=${Date.now()}` : ''
+  }`
 
   try {
     const response = await fetch(url, {
       headers: { Accept: 'application/vnd.github+json' },
+      cache: forceRefresh ? 'no-store' : 'default',
     })
 
     if (!response.ok) {

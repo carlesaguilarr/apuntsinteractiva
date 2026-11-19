@@ -58,6 +58,7 @@ export interface VaultCatalog {
   allAssets: VaultNoteItem[]
   readmeNote: VaultNoteItem | null
   fetchedAt: string
+  commitSha?: string
   fromCache: boolean
   rateLimited?: boolean
 }

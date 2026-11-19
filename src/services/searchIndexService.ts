@@ -324,33 +324,34 @@ export async function ensureFullTextIndex(
 
   const mdNotes = catalog.allNotes.filter((n) => n.extension === 'md')
   const validPaths = new Set(mdNotes.map((n) => n.path))
-  const signature = `${catalog.fetchedAt}:${mdNotes.length}:${forceReindex ? 'force' : 'normal'}`
+  const signature = `${catalog.commitSha ?? ''}:${catalog.fetchedAt}:${mdNotes.length}:${forceReindex ? 'force' : 'normal'}`
 
   if (forceReindex) {
     memoryIndex.clear()
-  } else {
-    void pruneStaleRecords(validPaths)
   }
+  void pruneStaleRecords(validPaths)
 
-  // Reutilitzem qualsevol apunt que ja estigui a la caché de sessió
-  const hydratedFromSession: IndexedNoteRecord[] = []
-  for (const note of mdNotes) {
-    if (!forceReindex && memoryIndex.get(note.path)?.sha === note.id) continue
-    try {
-      const cachedRaw = sessionStorage.getItem(`${NOTE_SESSION_CACHE_PREFIX}${note.path}`)
-      if (!cachedRaw) continue
-      const parsed = JSON.parse(cachedRaw) as { rawMarkdown?: string }
-      if (parsed.rawMarkdown) {
-        const rec = buildIndexedNoteRecord(note, parsed.rawMarkdown)
-        memoryIndex.set(note.path, rec)
-        hydratedFromSession.push(rec)
+  // Reutilitzem qualsevol apunt que ja estigui a la caché de sessió només si coincideix el SHA i no es força reindexació
+  if (!forceReindex) {
+    const hydratedFromSession: IndexedNoteRecord[] = []
+    for (const note of mdNotes) {
+      if (memoryIndex.get(note.path)?.sha === note.id) continue
+      try {
+        const cachedRaw = sessionStorage.getItem(`${NOTE_SESSION_CACHE_PREFIX}${note.path}`)
+        if (!cachedRaw) continue
+        const parsed = JSON.parse(cachedRaw) as { rawMarkdown?: string; sha?: string }
+        if (parsed.rawMarkdown && parsed.sha === note.id) {
+          const rec = buildIndexedNoteRecord(note, parsed.rawMarkdown)
+          memoryIndex.set(note.path, rec)
+          hydratedFromSession.push(rec)
+        }
+      } catch {
+        // ignora caché de sessió invàlida
       }
-    } catch {
-      // ignora caché de sessió invàlida
     }
-  }
-  if (hydratedFromSession.length > 0) {
-    void persistRecords(hydratedFromSession)
+    if (hydratedFromSession.length > 0) {
+      void persistRecords(hydratedFromSession)
+    }
   }
 
   const pendingNotes = mdNotes.filter(
@@ -395,7 +396,14 @@ export async function ensureFullTextIndex(
         cursor += 1
         const note = pendingNotes[idx]
         try {
-          const targetUrl = forceReindex ? `${note.rawUrl}?t=${Date.now()}` : note.rawUrl
+          let targetUrl = note.rawUrl
+          if (!catalog.commitSha) {
+            const params = new URLSearchParams({ sha: note.id })
+            if (forceReindex) params.set('t', String(Date.now()))
+            targetUrl = `${note.rawUrl}?${params.toString()}`
+          } else if (forceReindex) {
+            targetUrl = `${note.rawUrl}?t=${Date.now()}`
+          }
           const res = await fetch(targetUrl, {
             cache: forceReindex ? 'no-store' : 'default',
           })

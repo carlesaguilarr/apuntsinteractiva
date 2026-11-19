@@ -13,9 +13,59 @@ export const VAULT_OWNER = 'carlesaguilarr'
 export const VAULT_REPO = 'Vault'
 export const VAULT_BRANCH = 'main'
 
-const TREE_CACHE_KEY = 'apunts_vault_tree_v2'
+const TREE_CACHE_KEY = 'apunts_vault_tree_v3'
+const LEGACY_TREE_CACHE_KEY = 'apunts_vault_tree_v2'
 const NOTE_CACHE_PREFIX = 'apunts_vault_note_v1_'
 const CACHE_TTL_MS = 15 * 60 * 1000 // 15 minuts
+
+function safeStorageGet(storage: Storage, key: string): string | null {
+  try {
+    return storage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function safeStorageRemove(storage: Storage, key: string): void {
+  try {
+    storage.removeItem(key)
+  } catch {
+    // ignora errors d'accés a l'emmagatzematge
+  }
+}
+
+export function clearNoteContentCache(): void {
+  try {
+    const keysToDelete: string[] = []
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i)
+      if (key && key.startsWith(NOTE_CACHE_PREFIX)) {
+        keysToDelete.push(key)
+      }
+    }
+    for (const key of keysToDelete) {
+      sessionStorage.removeItem(key)
+    }
+  } catch {
+    // ignora errors d'accés a sessionStorage
+  }
+}
+
+function safeStorageSet(storage: Storage, key: string, value: string): void {
+  try {
+    storage.setItem(key, value)
+  } catch {
+    // Si la quota és plena (p. ex. molts apunts en caché), alliberem la caché d'apunts i reintentem un cop
+    if (storage === sessionStorage) {
+      clearNoteContentCache()
+      try {
+        storage.setItem(key, value)
+      } catch {
+        // continua sense persistir en caché abans que descartar dades noves
+      }
+    }
+  }
+}
 
 const ROMAN_NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII']
 
@@ -49,8 +99,8 @@ export function encodeGitHubPath(path: string): string {
     .join('/')
 }
 
-export function getRawFileUrl(path: string): string {
-  return `https://raw.githubusercontent.com/${VAULT_OWNER}/${VAULT_REPO}/${VAULT_BRANCH}/${encodeGitHubPath(path)}`
+export function getRawFileUrl(path: string, ref = VAULT_BRANCH): string {
+  return `https://raw.githubusercontent.com/${VAULT_OWNER}/${VAULT_REPO}/${ref}/${encodeGitHubPath(path)}`
 }
 
 export function getGitHubBlobUrl(path: string): string {
@@ -345,6 +395,8 @@ export function parseSubjectMeta(markdown: string): SubjectMetadata {
 
 async function fetchSubjectsMetadata(
   tree: GitHubTreeNode[],
+  commitSha?: string,
+  forceRefresh = false,
 ): Promise<Record<string, SubjectMetadata>> {
   const metaNodes = tree.filter((node) => {
     if (node.type !== 'blob') return false
@@ -359,11 +411,16 @@ async function fetchSubjectsMetadata(
 
   if (metaNodes.length === 0) return {}
 
+  const ref = commitSha || VAULT_BRANCH
+  const cacheBust = forceRefresh && !commitSha ? `?t=${Date.now()}` : ''
+
   const entries = await Promise.all(
     metaNodes.map(async (node) => {
       const subjectName = node.path.split('/')[0]
       try {
-        const res = await fetch(getRawFileUrl(node.path))
+        const res = await fetch(`${getRawFileUrl(node.path, ref)}${cacheBust}`, {
+          cache: forceRefresh ? 'no-store' : 'default',
+        })
         if (!res.ok) return null
         const text = await res.text()
         return [subjectName, parseSubjectMeta(text)] as const
@@ -388,10 +445,12 @@ export function buildCatalogFromTree(
   fromCache: boolean,
   rateLimited = false,
   metaBySubject: Record<string, SubjectMetadata> = {},
+  commitSha?: string,
 ): VaultCatalog {
   const allNotes: VaultNoteItem[] = []
   const allAssets: VaultNoteItem[] = []
   let readmeNote: VaultNoteItem | null = null
+  const rawRef = commitSha || VAULT_BRANCH
 
   const subjectMap = new Map<string, VaultNoteItem[]>()
 
@@ -424,7 +483,7 @@ export function buildCatalogFromTree(
       folderSegments,
       isDraft: isDraftNote(fileName),
       isAsset,
-      rawUrl: getRawFileUrl(node.path),
+      rawUrl: getRawFileUrl(node.path, rawRef),
       githubUrl: getGitHubBlobUrl(node.path),
     }
 
@@ -480,6 +539,7 @@ export function buildCatalogFromTree(
     allAssets,
     readmeNote,
     fetchedAt,
+    commitSha,
     fromCache,
     rateLimited,
   }
@@ -488,12 +548,113 @@ export function buildCatalogFromTree(
 interface CachedTreePayload {
   tree: GitHubTreeNode[]
   metaBySubject: Record<string, SubjectMetadata>
+  commitSha?: string
   fetchedAt: string
   timestamp: number
 }
 
+class VaultFetchError extends Error {
+  rateLimited: boolean
+
+  constructor(message: string, rateLimited = false) {
+    super(message)
+    this.name = 'VaultFetchError'
+    this.rateLimited = rateLimited
+  }
+}
+
+async function fetchLiveVaultTree(forceRefresh: boolean): Promise<{
+  tree: GitHubTreeNode[]
+  commitSha?: string
+}> {
+  const bust = Date.now()
+
+  // 1. Intentem primer l'endpoint propi de Vercel (/api/vault), que usa GITHUB_TOKEN i evita límits/caché CDN
+  try {
+    const apiRes = await fetch(`/api/vault?t=${bust}${forceRefresh ? '&refresh=1' : ''}`, {
+      cache: 'no-store',
+    })
+    const contentType = apiRes.headers.get('content-type') ?? ''
+    if (apiRes.ok && contentType.includes('application/json')) {
+      const apiData = (await apiRes.json()) as {
+        tree?: GitHubTreeNode[]
+        commitSha?: string | null
+      }
+      if (Array.isArray(apiData.tree)) {
+        return {
+          tree: apiData.tree,
+          commitSha: apiData.commitSha || undefined,
+        }
+      }
+    }
+  } catch {
+    // En desenvolupament local sense funcions de Vercel o error transitori, passem a GitHub directe
+  }
+
+  // 2. Fallback directe a l'API de GitHub: resolem primer el SHA de l'últim commit per evitar caché obsoleta
+  let commitSha: string | undefined
+  let treeRef = VAULT_BRANCH
+
+  const commitUrl = `https://api.github.com/repos/${VAULT_OWNER}/${VAULT_REPO}/commits/${VAULT_BRANCH}${
+    forceRefresh ? `?_=${bust}` : ''
+  }`
+
+  const commitRes = await fetch(commitUrl, {
+    headers: {
+      Accept: 'application/vnd.github+json',
+    },
+    cache: forceRefresh ? 'no-store' : 'default',
+  })
+
+  if (commitRes.status === 403 || commitRes.status === 429) {
+    throw new VaultFetchError(
+      'S’ha assolit temporalment el límit de consultes de GitHub. Torna-ho a provar d’aquí uns minuts.',
+      true,
+    )
+  }
+
+  if (commitRes.ok) {
+    const commitData = (await commitRes.json()) as {
+      sha?: string
+      commit?: { tree?: { sha?: string } }
+    }
+    commitSha = commitData.sha || undefined
+    treeRef = commitData.commit?.tree?.sha || commitSha || VAULT_BRANCH
+  }
+
+  const treeUrl =
+    treeRef === VAULT_BRANCH && forceRefresh
+      ? `https://api.github.com/repos/${VAULT_OWNER}/${VAULT_REPO}/git/trees/${VAULT_BRANCH}?recursive=1&_=${bust}`
+      : `https://api.github.com/repos/${VAULT_OWNER}/${VAULT_REPO}/git/trees/${encodeURIComponent(treeRef)}?recursive=1`
+
+  const treeRes = await fetch(treeUrl, {
+    headers: {
+      Accept: 'application/vnd.github+json',
+    },
+    cache: forceRefresh ? 'no-store' : 'default',
+  })
+
+  if (!treeRes.ok) {
+    const rateLimited = treeRes.status === 403 || treeRes.status === 429
+    throw new VaultFetchError(
+      rateLimited
+        ? 'S’ha assolit temporalment el límit de consultes de GitHub.'
+        : `No s’ha pogut connectar amb el repositori (Error ${treeRes.status}).`,
+      rateLimited,
+    )
+  }
+
+  const treeData = (await treeRes.json()) as { tree?: GitHubTreeNode[] }
+  return {
+    tree: treeData.tree ?? [],
+    commitSha,
+  }
+}
+
 export async function fetchVaultCatalog(forceRefresh = false): Promise<VaultCatalog> {
-  const cachedRaw = sessionStorage.getItem(TREE_CACHE_KEY) || localStorage.getItem(TREE_CACHE_KEY)
+  const cachedRaw =
+    safeStorageGet(sessionStorage, TREE_CACHE_KEY) ||
+    safeStorageGet(localStorage, TREE_CACHE_KEY)
   let cached: CachedTreePayload | null = null
 
   if (cachedRaw) {
@@ -511,59 +672,47 @@ export async function fetchVaultCatalog(forceRefresh = false): Promise<VaultCata
       true,
       false,
       cached.metaBySubject ?? {},
+      cached.commitSha,
     )
   }
 
-  const url = `https://api.github.com/repos/${VAULT_OWNER}/${VAULT_REPO}/git/trees/${VAULT_BRANCH}?recursive=1`
-
   try {
-    const response = await fetch(url, {
-      headers: {
-        Accept: 'application/vnd.github+json',
-      },
-    })
-
-    if (!response.ok) {
-      if (cached) {
-        return buildCatalogFromTree(
-          cached.tree,
-          cached.fetchedAt,
-          true,
-          response.status === 403,
-          cached.metaBySubject ?? {},
-        )
-      }
-      throw new Error(
-        response.status === 403
-          ? 'S’ha assolit temporalment el límit de consultes de GitHub.'
-          : `No s’ha pogut connectar amb el repositori (Error ${response.status}).`,
-      )
-    }
-
-    const data = (await response.json()) as { tree?: GitHubTreeNode[] }
-    const tree = data.tree ?? []
-    const metaBySubject = await fetchSubjectsMetadata(tree)
+    const { tree, commitSha } = await fetchLiveVaultTree(forceRefresh)
+    const metaBySubject = await fetchSubjectsMetadata(tree, commitSha, forceRefresh)
     const nowIso = new Date().toISOString()
     const payload: CachedTreePayload = {
       tree,
       metaBySubject,
+      commitSha,
       fetchedAt: nowIso,
       timestamp: Date.now(),
     }
 
-    const serialized = JSON.stringify(payload)
-    sessionStorage.setItem(TREE_CACHE_KEY, serialized)
-    localStorage.setItem(TREE_CACHE_KEY, serialized)
+    if (forceRefresh) {
+      clearNoteContentCache()
+    }
 
-    return buildCatalogFromTree(tree, nowIso, false, false, metaBySubject)
+    const serialized = JSON.stringify(payload)
+    safeStorageSet(sessionStorage, TREE_CACHE_KEY, serialized)
+    safeStorageSet(localStorage, TREE_CACHE_KEY, serialized)
+    safeStorageRemove(sessionStorage, LEGACY_TREE_CACHE_KEY)
+    safeStorageRemove(localStorage, LEGACY_TREE_CACHE_KEY)
+
+    return buildCatalogFromTree(tree, nowIso, false, false, metaBySubject, commitSha)
   } catch (err) {
+    // En una actualització manual (forceRefresh), propaguem l'error perquè la interfície n'informi l'usuari
+    if (forceRefresh) {
+      throw err
+    }
     if (cached) {
+      const rateLimited = err instanceof VaultFetchError ? err.rateLimited : true
       return buildCatalogFromTree(
         cached.tree,
         cached.fetchedAt,
         true,
-        true,
+        rateLimited,
         cached.metaBySubject ?? {},
+        cached.commitSha,
       )
     }
     throw err
@@ -882,13 +1031,14 @@ export function preprocessObsidianMarkdown(
       (_, rawAlt: string, relPath: string) => {
         const cleaned = relPath.trim().replace(/^\.\//, '')
         const fullPath = baseDir ? `${baseDir}/${cleaned}` : cleaned
+        const rawUrl = getRawFileUrl(fullPath, catalog.commitSha ?? VAULT_BRANCH)
         const sizeMatch = rawAlt.match(/^(.*?)\|(\d+(?:x\d+)?)$/i)
         if (sizeMatch) {
           const cleanAlt = sizeMatch[1].trim()
           const sizeFragment = `#obs-size=${sizeMatch[2]}`
-          return `![${cleanAlt}](${getRawFileUrl(fullPath)}${sizeFragment})`
+          return `![${cleanAlt}](${rawUrl}${sizeFragment})`
         }
-        return `![${rawAlt}](${getRawFileUrl(fullPath)})`
+        return `![${rawAlt}](${rawUrl})`
       },
     )
 
@@ -911,12 +1061,16 @@ export async function fetchNoteContent(
   forceRefresh = false,
 ): Promise<LoadedNote> {
   const cacheKey = `${NOTE_CACHE_PREFIX}${note.path}`
-  const cachedRaw = sessionStorage.getItem(cacheKey)
+  const cachedRaw = safeStorageGet(sessionStorage, cacheKey)
 
   if (!forceRefresh && cachedRaw) {
     try {
-      const parsed = JSON.parse(cachedRaw) as { rawMarkdown: string; timestamp: number }
-      if (Date.now() - parsed.timestamp < CACHE_TTL_MS) {
+      const parsed = JSON.parse(cachedRaw) as {
+        rawMarkdown: string
+        sha?: string
+        timestamp: number
+      }
+      if (parsed.sha === note.id && Date.now() - parsed.timestamp < CACHE_TTL_MS) {
         const processed = preprocessObsidianMarkdown(parsed.rawMarkdown, note, catalog)
         const headings = extractHeadings(processed)
         const words = countReadableWords(parsed.rawMarkdown)
@@ -935,15 +1089,27 @@ export async function fetchNoteContent(
     }
   }
 
-  const response = await fetch(note.rawUrl)
+  let fetchUrl = note.rawUrl
+  if (!catalog.commitSha) {
+    const params = new URLSearchParams({ sha: note.id })
+    if (forceRefresh) {
+      params.set('t', String(Date.now()))
+    }
+    fetchUrl = `${note.rawUrl}?${params.toString()}`
+  }
+
+  const response = await fetch(fetchUrl, {
+    cache: forceRefresh || !catalog.fromCache ? 'no-store' : 'default',
+  })
   if (!response.ok) {
     throw new Error(`No s’ha pogut carregar l’apunt «${note.title}» (${response.status}).`)
   }
 
   const rawMarkdown = await response.text()
-  sessionStorage.setItem(
+  safeStorageSet(
+    sessionStorage,
     cacheKey,
-    JSON.stringify({ rawMarkdown, timestamp: Date.now() }),
+    JSON.stringify({ rawMarkdown, sha: note.id, timestamp: Date.now() }),
   )
 
   const processed = preprocessObsidianMarkdown(rawMarkdown, note, catalog)

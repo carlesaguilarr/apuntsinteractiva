@@ -26,7 +26,7 @@ const MATCH_SOURCE_LABELS: Record<FullTextSearchHit['matchSource'], string> = {
 }
 
 function SearchModalContent() {
-  const { catalog, setSearchOpen } = useVault()
+  const { catalog, refreshing, refreshCatalog, setSearchOpen } = useVault()
   const [query, setQuery] = useState('')
   const [selectedSubject, setSelectedSubject] = useState('totes')
   const [activeIndex, setActiveIndex] = useState(0)
@@ -39,16 +39,26 @@ function SearchModalContent() {
 
   const inputRef = useRef<HTMLInputElement>(null)
   const resultsListRef = useRef<HTMLDivElement>(null)
+  const skipAutoIndexFetchedAtRef = useRef<string | null>(null)
+  const mountedRef = useRef(true)
   const navigate = useNavigate()
 
   useEffect(() => {
+    mountedRef.current = true
     const timer = window.setTimeout(() => inputRef.current?.focus(), 20)
-    return () => window.clearTimeout(timer)
+    return () => {
+      mountedRef.current = false
+      window.clearTimeout(timer)
+    }
   }, [])
 
   // Inicia (o valida) la indexació progressiva de text complet en obrir el cercador
   useEffect(() => {
     if (!catalog) return
+    if (skipAutoIndexFetchedAtRef.current === catalog.fetchedAt) {
+      skipAutoIndexFetchedAtRef.current = null
+      return
+    }
     let cancelled = false
 
     void ensureFullTextIndex(catalog, (progress) => {
@@ -62,17 +72,21 @@ function SearchModalContent() {
     }
   }, [catalog])
 
-  const handleForceReindex = useCallback(() => {
-    if (!catalog || indexProgress.indexing) return
+  const handleForceReindex = useCallback(async () => {
+    if (indexProgress.indexing || refreshing) return
+    const latestCatalog = (await refreshCatalog()) ?? catalog
+    if (!latestCatalog || !mountedRef.current) return
+    skipAutoIndexFetchedAtRef.current = latestCatalog.fetchedAt
     void ensureFullTextIndex(
-      catalog,
+      latestCatalog,
       (progress) => {
+        if (!mountedRef.current) return
         setIndexProgress(progress)
         setIndexRevision((r) => r + 1)
       },
       true,
     )
-  }, [catalog, indexProgress.indexing])
+  }, [catalog, indexProgress.indexing, refreshing, refreshCatalog])
 
   const hits = useMemo(() => {
     if (!catalog) return []
@@ -220,12 +234,15 @@ function SearchModalContent() {
             <button
               type="button"
               className="search-reindex-btn"
-              onClick={handleForceReindex}
-              disabled={indexProgress.indexing || !catalog}
-              title="Reindexar tots els apunts des de GitHub"
+              onClick={() => void handleForceReindex()}
+              disabled={indexProgress.indexing || refreshing || !catalog}
+              title="Actualitzar catàleg i reindexar tots els apunts des de GitHub"
             >
-              <RefreshCw size={11} className={indexProgress.indexing ? 'spin' : ''} />
-              Reindexar
+              <RefreshCw
+                size={11}
+                className={indexProgress.indexing || refreshing ? 'spin' : ''}
+              />
+              {refreshing ? 'Actualitzant...' : 'Reindexar'}
             </button>
           </div>
         </div>
