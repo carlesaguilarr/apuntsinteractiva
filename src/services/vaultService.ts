@@ -576,6 +576,48 @@ export function stripFrontmatter(markdown: string): string {
   return markdown.slice(match[0].length)
 }
 
+export function stripObsidianComments(markdown: string): string {
+  const lines = markdown.split(/\r?\n/)
+  const out: string[] = []
+  let inCodeFence = false
+  let inCommentBlock = false
+
+  for (const line of lines) {
+    if (!inCommentBlock && /^\s*(```|~~~)/.test(line)) {
+      inCodeFence = !inCodeFence
+      out.push(line)
+      continue
+    }
+
+    if (inCodeFence) {
+      out.push(line)
+      continue
+    }
+
+    let current = line
+    if (inCommentBlock) {
+      const endIdx = current.indexOf('%%')
+      if (endIdx === -1) {
+        continue
+      }
+      current = current.slice(endIdx + 2)
+      inCommentBlock = false
+    }
+
+    current = current.replace(/%%[\s\S]*?%%/g, '')
+
+    const startIdx = current.indexOf('%%')
+    if (startIdx !== -1) {
+      current = current.slice(0, startIdx)
+      inCommentBlock = true
+    }
+
+    out.push(current)
+  }
+
+  return out.join('\n')
+}
+
 function resolveWikilinkTarget(targetRaw: string, catalog: VaultCatalog): VaultNoteItem | null {
   const cleanTarget = targetRaw.split('#')[0].trim().replace(/\.md$/i, '')
   if (!cleanTarget) return null
@@ -604,6 +646,39 @@ function resolveAssetTarget(targetRaw: string, catalog: VaultCatalog): string | 
   return match ? match.rawUrl : null
 }
 
+function parseObsidianEmbedMeta(inner: string): {
+  target: string
+  alt: string
+  sizeFragment: string
+} {
+  const parts = inner
+    .split('|')
+    .map((p) => p.trim())
+    .filter(Boolean)
+  const target = parts[0] ?? ''
+  const defaultAlt = target.split('/').pop() ?? target
+
+  let alt = ''
+  let sizeFragment = ''
+
+  for (const part of parts.slice(1)) {
+    const dimMatch = part.match(/^(\d+)(?:x(\d+))?$/i)
+    if (dimMatch) {
+      const width = dimMatch[1]
+      const height = dimMatch[2]
+      sizeFragment = height ? `#obs-size=${width}x${height}` : `#obs-size=${width}`
+    } else if (!alt) {
+      alt = part
+    }
+  }
+
+  return {
+    target,
+    alt: alt || defaultAlt,
+    sizeFragment,
+  }
+}
+
 const CALLOUT_DEFAULT_TITLES: Record<string, string> = {
   info: 'Informació',
   note: 'Nota',
@@ -611,11 +686,27 @@ const CALLOUT_DEFAULT_TITLES: Record<string, string> = {
   cite: 'Cita',
   tip: 'Consell',
   hint: 'Pista',
+  important: 'Important',
   warning: 'Atenció',
   caution: 'Precaució',
-  danger: 'Important',
+  attention: 'Atenció',
+  danger: 'Perill',
+  error: 'Error',
+  failure: 'Error',
+  fail: 'Error',
+  missing: 'Pendent',
+  bug: 'Incidència',
+  success: 'Correcte',
+  check: 'Verificat',
+  done: 'Completat',
+  question: 'Pregunta',
+  help: 'Ajuda',
+  faq: 'Preguntes freqüents',
+  todo: 'Per fer',
   example: 'Exemple',
   abstract: 'Resum',
+  summary: 'Resum',
+  tldr: 'Resum',
 }
 
 function preprocessObsidianCallouts(markdown: string): string {
@@ -625,20 +716,21 @@ function preprocessObsidianCallouts(markdown: string): string {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
-    if (/^\s*```/.test(line)) {
+    if (/^\s*(```|~~~)/.test(line)) {
       inCodeFence = !inCodeFence
       out.push(line)
       continue
     }
 
     if (!inCodeFence) {
-      const calloutMatch = line.match(/^(\s*)>\s*\[!([a-zA-Z0-9_-]+)\][+-]?\s*(.*)$/)
+      const calloutMatch = line.match(/^(\s*)>\s*\[!([a-zA-Z0-9_-]+)\]([+-])?\s*(.*)$/)
       if (calloutMatch) {
         const indent = calloutMatch[1] ?? ''
         const type = calloutMatch[2].toLowerCase()
-        const rawTitle = calloutMatch[3].trim()
+        const fold = calloutMatch[3] ?? ''
+        const rawTitle = calloutMatch[4].trim()
         const title = rawTitle || CALLOUT_DEFAULT_TITLES[type] || type
-        out.push(`${indent}> OBSCALLOUT::${type}::${title}`)
+        out.push(`${indent}> OBSCALLOUT::${type}::${fold}::${title}`)
         out.push(`${indent}>`)
         continue
       }
@@ -650,6 +742,33 @@ function preprocessObsidianCallouts(markdown: string): string {
   return out.join('\n')
 }
 
+function transformLineOutsideInlineCode(line: string, transform: (chunk: string) => string): string {
+  // Evita transformar wikilinks/embeds dins de codi inline `...` o fórmules `$...$`
+  const segments = line.split(/(`[^`]+`)/g)
+  return segments
+    .map((segment, index) => (index % 2 === 1 ? segment : transform(segment)))
+    .join('')
+}
+
+function transformMarkdownOutsideCodeFences(
+  markdown: string,
+  transformLine: (line: string) => string,
+): string {
+  const lines = markdown.split(/\r?\n/)
+  let inCodeFence = false
+
+  return lines
+    .map((line) => {
+      if (/^\s*(```|~~~)/.test(line)) {
+        inCodeFence = !inCodeFence
+        return line
+      }
+      if (inCodeFence) return line
+      return transformLineOutsideInlineCode(line, transformLine)
+    })
+    .join('\n')
+}
+
 export function extractHeadings(markdown: string): MarkdownHeading[] {
   const lines = markdown.split(/\r?\n/)
   const headings: MarkdownHeading[] = []
@@ -657,7 +776,7 @@ export function extractHeadings(markdown: string): MarkdownHeading[] {
   const usedIds = new Map<string, number>()
 
   for (const line of lines) {
-    if (/^\s*```/.test(line)) {
+    if (/^\s*(```|~~~)/.test(line)) {
       inCodeFence = !inCodeFence
       continue
     }
@@ -669,7 +788,11 @@ export function extractHeadings(markdown: string): MarkdownHeading[] {
     const level = match[1].length
     const text = match[2]
       .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')
+      .replace(/\[\[#([^\]]+)\]\]/g, '$1')
+      .replace(/\[\[([^\]#]+)#([^\]]+)\]\]/g, '$1 › $2')
       .replace(/\[\[([^\]]+)\]\]/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/==([^=]+)==/g, '$1')
       .replace(/[*_`~]/g, '')
       .trim()
 
@@ -693,43 +816,93 @@ export function preprocessObsidianMarkdown(
   note: VaultNoteItem,
   catalog: VaultCatalog,
 ): string {
-  let content = stripFrontmatter(rawMarkdown)
+  let content = stripObsidianComments(stripFrontmatter(rawMarkdown))
 
-  // Converteix incrustacions d'imatges ![[imatge.png]] o ![[imatge.png|400]]
-  content = content.replace(/!\[\[([^\]]+)\]\]/g, (_, inner: string) => {
-    const resolved = resolveAssetTarget(inner, catalog)
-    const alt = inner.split('|')[0].trim()
-    if (resolved) {
-      return `![${alt}](${resolved})`
-    }
-    return `*[Recurs adjunt: ${alt}]*`
-  })
-
-  // Converteix enllaços interns d'Obsidian [[Destí|Àlies]] o [[Destí]]
-  content = content.replace(/\[\[([^\]]+)\]\]/g, (_, inner: string) => {
-    const [targetPart, aliasPart] = inner.split('|')
-    const label = (aliasPart ?? targetPart.split('#')[0]).trim()
-    const matchedNote = resolveWikilinkTarget(targetPart, catalog)
-
-    if (matchedNote) {
-      return `[${label}](#/apunt/${matchedNote.slug})`
-    }
-    return `[${label}](#/nota-pendent/${encodeURIComponent(targetPart.trim())})`
-  })
-
-  // Resol imatges Markdown relatives ![alt](./img.png) cap a raw.githubusercontent.com
   const baseDir = note.path.includes('/')
     ? note.path.slice(0, note.path.lastIndexOf('/'))
     : ''
 
-  content = content.replace(/!\[([^\]]*)\]\((?!https?:\/\/|#)([^)]+)\)/g, (_, alt: string, relPath: string) => {
-    const cleaned = relPath.replace(/^\.\//, '')
-    const fullPath = baseDir ? `${baseDir}/${cleaned}` : cleaned
-    return `![${alt}](${getRawFileUrl(fullPath)})`
+  content = transformMarkdownOutsideCodeFences(content, (chunk) => {
+    let next = chunk
+
+    // 1. Converteix incrustacions ![[imatge.png]], ![[imatge.png|400]] o ![[img.png|Peu|400x300]]
+    next = next.replace(/!\[\[([^\]]+)\]\]/g, (_, inner: string) => {
+      const { target, alt, sizeFragment } = parseObsidianEmbedMeta(inner)
+      const resolved = resolveAssetTarget(target, catalog)
+      if (resolved) {
+        return `![${alt}](${resolved}${sizeFragment})`
+      }
+
+      // Si s'incrusta una nota Markdown ![[Altra nota]], oferim un enllaç directe
+      const matchedNote = resolveWikilinkTarget(target, catalog)
+      if (matchedNote) {
+        const hashIdx = target.indexOf('#')
+        const sectionPart = hashIdx === -1 ? '' : target.slice(hashIdx + 1).trim()
+        const suffix = sectionPart ? `?seccio=${encodeURIComponent(slugify(sectionPart))}` : ''
+        return `[↗ ${matchedNote.title}${sectionPart ? ` › ${sectionPart}` : ''}](#/apunt/${matchedNote.slug}${suffix})`
+      }
+
+      return `*[Recurs adjunt: ${alt}]*`
+    })
+
+    // 2. Converteix enllaços interns d'Obsidian:
+    // [[#Secció]], [[#Secció|Àlies]], [[Apunt#Secció]], [[Apunt#Secció|Àlies]], [[Apunt|Àlies]], [[Apunt]]
+    next = next.replace(/\[\[([^\]]+)\]\]/g, (_, inner: string) => {
+      const pipeIdx = inner.indexOf('|')
+      const targetPart = (pipeIdx === -1 ? inner : inner.slice(0, pipeIdx)).trim()
+      const aliasPart = pipeIdx === -1 ? undefined : inner.slice(pipeIdx + 1).trim()
+
+      const hashIdx = targetPart.indexOf('#')
+      const notePart = (hashIdx === -1 ? targetPart : targetPart.slice(0, hashIdx)).trim()
+      const rawSection = hashIdx === -1 ? '' : targetPart.slice(hashIdx + 1).trim()
+      const cleanSection = rawSection.replace(/^\^/, '').trim()
+      const sectionSlug = cleanSection ? slugify(cleanSection) : ''
+
+      // Enllaç a una secció del mateix apunt: [[#Secció]]
+      if (!notePart && sectionSlug) {
+        const label = aliasPart || cleanSection
+        return `[${label}](#obs-section/${encodeURIComponent(sectionSlug)})`
+      }
+
+      const label =
+        aliasPart || (cleanSection ? `${notePart} › ${cleanSection}` : notePart || targetPart)
+      const matchedNote = resolveWikilinkTarget(notePart, catalog)
+
+      if (matchedNote) {
+        const suffix = sectionSlug ? `?seccio=${encodeURIComponent(sectionSlug)}` : ''
+        return `[${label}](#/apunt/${matchedNote.slug}${suffix})`
+      }
+
+      return `[${label}](#/nota-pendent/${encodeURIComponent(notePart || targetPart)})`
+    })
+
+    // 3. Resol imatges Markdown relatives ![alt](./img.png) o ![alt|400](./img.png) cap a raw.githubusercontent.com
+    next = next.replace(
+      /!\[([^\]]*)\]\((?!https?:\/\/|#)([^)]+)\)/g,
+      (_, rawAlt: string, relPath: string) => {
+        const cleaned = relPath.trim().replace(/^\.\//, '')
+        const fullPath = baseDir ? `${baseDir}/${cleaned}` : cleaned
+        const sizeMatch = rawAlt.match(/^(.*?)\|(\d+(?:x\d+)?)$/i)
+        if (sizeMatch) {
+          const cleanAlt = sizeMatch[1].trim()
+          const sizeFragment = `#obs-size=${sizeMatch[2]}`
+          return `![${cleanAlt}](${getRawFileUrl(fullPath)}${sizeFragment})`
+        }
+        return `![${rawAlt}](${getRawFileUrl(fullPath)})`
+      },
+    )
+
+    return next
   })
 
   content = preprocessObsidianCallouts(content)
   return content
+}
+
+function countReadableWords(rawMarkdown: string): number {
+  const clean = stripObsidianComments(stripFrontmatter(rawMarkdown)).trim()
+  if (!clean) return 0
+  return clean.split(/\s+/).filter(Boolean).length
 }
 
 export async function fetchNoteContent(
@@ -746,7 +919,7 @@ export async function fetchNoteContent(
       if (Date.now() - parsed.timestamp < CACHE_TTL_MS) {
         const processed = preprocessObsidianMarkdown(parsed.rawMarkdown, note, catalog)
         const headings = extractHeadings(processed)
-        const words = parsed.rawMarkdown.trim().split(/\s+/).filter(Boolean).length
+        const words = countReadableWords(parsed.rawMarkdown)
         return {
           item: note,
           rawMarkdown: parsed.rawMarkdown,
@@ -775,7 +948,7 @@ export async function fetchNoteContent(
 
   const processed = preprocessObsidianMarkdown(rawMarkdown, note, catalog)
   const headings = extractHeadings(processed)
-  const words = rawMarkdown.trim().split(/\s+/).filter(Boolean).length
+  const words = countReadableWords(rawMarkdown)
 
   return {
     item: note,

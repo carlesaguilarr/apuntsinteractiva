@@ -28,6 +28,11 @@ function ScrollToTop() {
   const { key, pathname, search, hash } = useLocation()
 
   useLayoutEffect(() => {
+    const params = new URLSearchParams(search)
+    if (params.has('seccio')) {
+      return
+    }
+
     forceScrollToTop()
     const rafId = window.requestAnimationFrame(forceScrollToTop)
     const timerId = window.setTimeout(forceScrollToTop, 60)
